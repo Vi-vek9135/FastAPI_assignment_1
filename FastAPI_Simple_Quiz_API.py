@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 app = FastAPI()
 
-# Database Connection
+
 
 DATABASE_URL = "postgresql+psycopg2://postgres:vivek123@localhost/quizzes"
 engine = create_engine(DATABASE_URL, echo=True)
@@ -19,46 +19,56 @@ session = SessionLocal()
 Base = declarative_base()
 
 
-# Quiz Model
+
 class Quiz(Base):
     __tablename__ = "quizzes"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    
+    class Question(BaseModel):
+        statement: str
+        options: List[str]
+
     questions = Column(JSON, nullable=False)
 
 
-# Quiz Response Model
+
 class QuizResponse(BaseModel):
     questions: List[str]
     options: List[List[str]]
 
 
-# Quiz Answer Model
+
 class QuizAnswer(BaseModel):
     quiz_id: int
     user_answers: List[str]
 
 
-# Quiz Result Model
+
 class QuizResult(BaseModel):
     quiz_id: int
     score: int
     correct_answers: List[str]
 
 
-# Retrieve a specific quiz
+
 @app.get("/quizzes/{quiz_id}", response_model=QuizResponse)
 def get_quiz(quiz_id: int):
     quiz = session.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    questions = quiz.questions.keys()
-    options = [list(quiz.questions[q]) for q in questions]
-    return {"questions": list(questions), "options": options}
+    
+    questions = [q.statement for q in quiz.questions]
+    options = [[f"{chr(65 + i)}: {option}" for i, option in enumerate(q.options)] for q in quiz.questions]
+    
+    return {"questions": questions, "options": options}
 
 
-# Allow users to submit their quiz answers
+
+def is_valid_option(option: str, total_options: int) -> bool:
+    return option.upper() in [chr(65 + i) for i in range(total_options)]
+
 @app.post("/submit")
 def submit_quiz_answers(answers: List[QuizAnswer]):
     result = {"quiz_id": answers[0].quiz_id, "score": 0, "correct_answers": []}
@@ -67,8 +77,13 @@ def submit_quiz_answers(answers: List[QuizAnswer]):
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     for answer in answers:
-        question = list(quiz.questions.keys())[answer.quiz_id - 1]
-        correct_answer = quiz.questions[question][0]
+        question = quiz.questions[answer.quiz_id - 1]
+        total_options = len(question.options)
+
+        if not is_valid_option(answer.user_answers[0], total_options):
+            raise HTTPException(status_code=400, detail=f"Invalid answer for question {answer.quiz_id}")
+
+        correct_answer = question.options[0].split(":")[1].strip()
         if answer.user_answers[0] == correct_answer:
             result["score"] += 1
         result["correct_answers"].append(correct_answer)
@@ -76,23 +91,46 @@ def submit_quiz_answers(answers: List[QuizAnswer]):
     return result
 
 
-# Return the quiz result for a specific quiz
+
+
 @app.get("/result/{quiz_id}", response_model=QuizResult)
 def get_quiz_result(quiz_id: int):
     quiz = session.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
+    total_questions = len(quiz.questions)
     return {
         "quiz_id": quiz_id,
         "score": 0,
-        "correct_answers": list(quiz.questions.values()),
+        "correct_answers": [question.options[0].split(":")[1].strip() for question in quiz.questions],
     }
 
 
-# Initialize the database
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    
+    
+    sample_quizzes = [
+        {
+            "name": "Quiz 1",
+            "questions": [
+                {"statement": "What is the capital of France?", "options": ["A: Paris", "B: London", "C: Berlin", "D: Madrid"]},
+                {"statement": "Which planet is known as the Red Planet?", "options": ["A: Mars", "B: Venus", "C: Jupiter", "D: Saturn"]},
+                {"statement": "Who wrote 'Romeo and Juliet'?", "options": ["A: William Shakespeare", "B: Charles Dickens", "C: Jane Austen", "D: Mark Twain"]},
+            ],
+        },
+        
+    ]
+
+    for quiz_data in sample_quizzes:
+        quiz = Quiz(**quiz_data)
+        session.add(quiz)
+
+    session.commit()
+
 
 
 if __name__ == "__main__":
