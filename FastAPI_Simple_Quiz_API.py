@@ -1,4 +1,4 @@
-
+from typing import Dict
 import uvicorn
 
 from fastapi import FastAPI, HTTPException
@@ -17,6 +17,10 @@ engine = create_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(bind=engine)
 session = SessionLocal()
 Base = declarative_base()
+
+class Question(BaseModel):
+    statement: str
+    options: List[str]
 
 
 
@@ -58,11 +62,16 @@ def get_quiz(quiz_id: int):
     quiz = session.query(Quiz).filter(Quiz.id == quiz_id).first()
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    
-    questions = [q.statement for q in quiz.questions]
-    options = [[f"{chr(65 + i)}: {option}" for i, option in enumerate(q.options)] for q in quiz.questions]
-    
-    return {"questions": questions, "options": options}
+
+  
+    questions_data = quiz.questions
+    questions = [Question(**q) for q in questions_data]
+
+   
+    questions_statements = [q.statement for q in questions]
+    options = [[f"{chr(65 + i)}: {option}" for i, option in enumerate(q.options)] for q in questions]
+
+    return {"questions": questions_statements, "options": options}
 
 
 
