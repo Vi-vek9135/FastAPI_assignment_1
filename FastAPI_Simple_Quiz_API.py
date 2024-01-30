@@ -86,13 +86,18 @@ def submit_quiz_answers(answers: List[QuizAnswer]):
         raise HTTPException(status_code=404, detail="Quiz not found")
 
     for answer in answers:
-        question = quiz.questions[answer.quiz_id - 1]
-        total_options = len(question.options)
+        question_index = answer.quiz_id - 1
+
+        if question_index >= len(quiz.questions):
+            raise HTTPException(status_code=400, detail=f"Invalid quiz_id: {answer.quiz_id}")
+
+        question = quiz.questions[question_index]
+        total_options = len(question["options"])
 
         if not is_valid_option(answer.user_answers[0], total_options):
             raise HTTPException(status_code=400, detail=f"Invalid answer for question {answer.quiz_id}")
 
-        correct_answer = question.options[0].split(":")[1].strip()
+        correct_answer = question["options"][0].split(":")[1].strip()
         if answer.user_answers[0] == correct_answer:
             result["score"] += 1
         result["correct_answers"].append(correct_answer)
